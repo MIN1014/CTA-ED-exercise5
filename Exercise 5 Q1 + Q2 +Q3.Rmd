@@ -1,0 +1,331 @@
+---
+title: "CTA-ED Exercise 5: Unsupervised learning (topic models)"
+author: "Nayah and Min"
+date: "12/03/2024"
+output: html_document
+---
+## Exercises
+
+## Setup 
+
+Before proceeding, we'll load the packages we will need for this tutorial.
+
+```{r, message=F}
+library(tidyverse) # loads dplyr, ggplot2, and others
+library(stringr) # to handle text elements
+library(tidytext) # includes set of functions useful for manipulating text
+library(topicmodels) # to estimate topic models
+library(gutenbergr) # to get text data
+library(scales)
+library(tm)
+library(ggthemes) # to make your plots look nice
+library(readr)
+library(quanteda)
+library(quanteda.textmodels)
+```
+
+```{r}
+#install_package(devtools)
+devtools::install_github("matthewjdenny/preText")
+library(preText)
+```
+
+## Question 1: War and Peace
+
+1. Choose another book or set of books from Project Gutenberg
+We choose War and Peace, a novel composed of 15 books + epilogue.  
+```{r choosebook}
+tolstoy <- gutenberg_download(c(2600),
+                            meta_fields = "author")
+
+```
+
+In order to create a dfm, we take out the lengthy table of contents, and divide it up by book number, before passing the resulting data to a dataframe.
+
+```{r dfm}
+
+# first we need to take out lines 1-796, which are table of contents, and the irrelevant info.
+tolstoy_edit<- tolstoy %>%
+  select(-gutenberg_id,-author)%>%
+  mutate(row.id=1:nrow(tolstoy))%>%
+  filter(row.id>797)
+
+Book_Headings <- tolstoy_edit[grep("BOOK", tolstoy_edit$text), ]
+Book_Headings[16:30,]
+book.name<-c(Book_Headings$text,"EPILOGUE")#  create book name vector
+
+#We make a vector with the rirght length of each book/chapter id.
+row_chapt<-c(Book_Headings$row.id,nrow(tolstoy_edit)) #the row.ids
+prior<-c(0,row_chapt[1:15]) #number of rows already accounted for
+repetitions<-row_chapt-prior #how many times to repeat
+
+book.id<-rep(book.name,times=repetitions) #create vector for df
+nrow(tolstoy_edit)==length(book.id)#check it worked lengthwise, true
+
+tolstoy_edit2<-cbind(tolstoy_edit,book.id) #we bind this to the text dataframe.
+
+
+
+tolstoy_words <- tolstoy_edit2 %>% # we now run normal preprocessing to create a dtm.
+  unnest_tokens(word, text) %>%
+  filter(!is.na(word)) %>%
+  count(book.id, word, sort = TRUE) %>%
+  ungroup() %>%
+  anti_join(stop_words) 
+
+
+tolstoy_dtm <-tolstoy_words %>% #create dtm
+  cast_dtm(book.id, word, n)
+
+tm::inspect(tolstoy_dtm) #look at dtm
+```
+
+
+## Question 2: Own topic model
+2. Run your own topic model on these books, changing the k of topics, and evaluating accuracy.
+
+Some of the plausible topic distinctions in War and Peace would be: distinguishing by books (16), or distinguishing by family subplots (5), or between narrative and philosophy (2). We will run them seperately, staring with the lowest k. Vis
+
+```{r modelk2}
+tolstoy_lda_2 <- LDA(tolstoy_dtm, k = 2, control = list(seed = 1209)) #run model
+
+tolstoy_lda_2 #view model
+
+tolstoy_topics_2 <- tidy(tolstoy_lda_2, matrix = "beta") #extract the per-topic-per-word probabilities
+
+head(tolstoy_topics_2, n = 10) #look at topics.
+
+```
+
+We can also run it with family subplots.
+```{r modelk5}
+tolstoy_lda_5 <- LDA(tolstoy_dtm, k = 5, control = list(seed = 1920)) #run model
+
+tolstoy_lda_5 #view model
+
+tolstoy_topics_5<- tidy(tolstoy_lda_5, matrix = "beta")
+
+head(tolstoy_topics_5, n = 10) #look at topics.
+
+tolstoy_top_terms_5 <- tolstoy_topics_5 %>% #arrange topics
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+tolstoy_top_terms_5 %>% # plot topics
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free", ncol = 4) +
+  scale_y_reordered()
+
+```
+
+We are also looking at 10. 
+```{r modelk10}
+tolstoy_lda_10 <- LDA(tolstoy_dtm, k = 10, control = list(seed = 1230)) #run model
+
+tolstoy_lda_10 #view model
+
+tolstoy_topics_10<- tidy(tolstoy_lda_10, matrix = "beta")
+
+head(tolstoy_topics_10, n = 10) #look at topics.
+
+tolstoy_top_terms_10 <- tolstoy_topics_10 %>% #arrange topics
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+tolstoy_top_terms_10 %>% # plot topics
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free", ncol = 4) +
+  scale_y_reordered()
+
+```
+
+And finally, 16. 
+```{r modelk16}
+tolstoy_lda_16 <- LDA(tolstoy_dtm, k = 16, control = list(seed = 1203)) #run model
+
+tolstoy_lda_16 #view model
+
+tolstoy_topics_16<- tidy(tolstoy_lda_16, matrix = "beta")
+
+head(tolstoy_topics_16, n = 10) #look at topics.
+
+tolstoy_top_terms_16 <- tolstoy_topics_16 %>% #arrange topics
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+tolstoy_top_terms_16 %>% # plot topics
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free", ncol = 4) +
+  scale_y_reordered()
+
+```
+These all provide some form of topic distinction, with some topics easy to distinguish: such as army vs love vs philosophical topics, or the key personages in each of them. However, in order to formally evaluate them, we need to look closer. 
+
+
+### Split into chapter documents
+
+In the below, we first separate the volumes into chapters, then we repeat the same procedure as above. The only difference now is that instead of one document per book, we have one document per chapter, increasing sparsity
+
+```{r}
+
+# Make a check if there are any NAs in "tolstoy_edit2"
+any(is.na(tolstoy_edit2)) 
+
+# Divide into documents, each representing one chapter
+tolstoy_chapter <- tolstoy_edit2 %>%
+  group_by(book.id) %>%
+  mutate(chapter = cumsum(str_detect(text, regex("^chapter ", ignore_case = TRUE)))) %>%
+  ungroup() %>%
+  filter(chapter > 0) %>%
+  unite(document, book.id, chapter)
+
+# Split into words
+tolstoy_chapter_word <- tolstoy_chapter %>%
+  unnest_tokens(word, text)
+
+# Find document-word counts
+tolstoy_word_counts <- tolstoy_chapter_word %>%
+  anti_join(stop_words) %>%
+  count(document, word, sort = TRUE) %>%
+  ungroup()
+
+tolstoy_word_counts
+
+# Cast into DTM format for LDA analysis
+
+tolstoy_chapters_dtm <- tolstoy_word_counts %>%
+  cast_dtm(document, word, n)
+
+tm::inspect(tolstoy_chapters_dtm)
+
+```
+
+We then re-estimate the topic model with this new DocumentTermMatrix object, specifying k equal to 16. This will enable us to evaluate whether a topic model is able to generatively assign to volume with accuracy.
+
+```{r}
+tolstoy_chapters_lda <- LDA(tolstoy_chapters_dtm, k = 16, control = list(seed = 1249))
+```
+
+After this, it is worth looking at another output of the latent dirichlet allocation procedure. The γ probability represents the per-document-per-topic probability or, in other words, the probability that a given document (here: chapter) belongs to a particular topic (and here, we are assuming these topics represent volumes).
+
+The gamma values are therefore the estimated proportion of words within a given chapter allocated to a given volume. 
+
+```{r}
+
+tolstoy_chapters_gamma <- tidy(tolstoy_chapters_lda, matrix = "gamma")
+tolstoy_chapters_gamma
+
+```
+
+### Examine consensus
+
+Now that we have these topic probabilities, we can see how well our unsupervised learning did at distinguishing the books generatively just from the words contained in each chapter.
+
+```{r}
+
+# First separate the document name into title and chapter
+
+tolstoy_chapters_gamma <- tolstoy_chapters_gamma %>%
+  separate(document, c("title", "chapter"), sep = "_", convert = TRUE)
+
+tolstoy_chapter_classifications <- tolstoy_chapters_gamma %>%
+  group_by(title, chapter) %>%
+  top_n(1, gamma) %>%
+  ungroup()
+
+tolstoy_book_topics <- tolstoy_chapter_classifications %>%
+  count(title, topic) %>%
+  group_by(title) %>%
+  top_n(1, n) %>%
+  ungroup() %>%
+  transmute(consensus = title, topic)
+
+tolstoy_chapter_classifications %>%
+  inner_join(tolstoy_book_topics, by = "topic") %>%
+  filter(title != consensus)
+
+# Look document-word pairs were to see which words in each documents were assigned
+# to a given topic
+
+assignments <- augment(tolstoy_chapters_lda, data = tolstoy_chapters_dtm)
+assignments
+
+assignments <- assignments %>%
+  separate(document, c("title", "chapter"), sep = "_", convert = TRUE) %>%
+  inner_join(tolstoy_book_topics, by = c(".topic" = "topic"))
+
+assignments %>%
+  count(title, consensus, wt = count) %>%
+  group_by(title) %>%
+  mutate(percent = n / sum(n)) %>%
+  ggplot(aes(consensus, title, fill = percent)) +
+  geom_tile() +
+  scale_fill_gradient2(high = "red", label = percent_format()) +
+  geom_text(aes(x = consensus, y = title, label = scales::percent(percent))) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid = element_blank()) +
+  labs(x = "Book words assigned to",
+       y = "Book words came from",
+       fill = "% of assignments")
+?geom_text
+```
+
+Not bad! We see that the diagonal, with few exceptions, shows the highest correlation, implying that the model did a good job.
+
+
+## Question 3: Validation using `preText`
+
+In this section, we'll be using the `preText` package mentioned in @denny_text_2018 to see the impact of different pre-processing choices on our text.
+
+First we need to reformat our text into a `quanteda` corpus object. 
+
+```{r}
+# load in corpus of the text data.
+corp_tolstoy <- corpus(tolstoy_edit2, text_field = "text")
+# use first 10 documents for example
+documents_tolstoy <- corp_tolstoy[sample(1:30000,1000)]
+# take a look at the document names
+print(names(documents_tolstoy[1:10]))
+```
+
+And now we are ready to preprocess in different ways. Here, we are including n-grams so we are preprocessing the text in 128 different ways. This takes about ten minutes to run on a machine with 8GB RAM.
+
+```{r}
+preprocessed_documents_tolstoy <- factorial_preprocessing(
+    documents_tolstoy,
+    use_ngrams = TRUE,
+    infrequent_term_threshold = 0.2,
+    verbose = FALSE)
+```
+
+We can then get the results of our pre-processing, comparing the distance between documents that have been processed in different ways. 
+
+```{r,warning = F}
+preText_results1 <- preText(
+    preprocessed_documents_tolstoy,
+    dataset_name = " new text",
+    distance_method = "cosine",
+    num_comparisons = 20,
+    verbose = FALSE)
+
+```
+
+And we can plot these accordingly. 
+
+```{r,warning = F}
+preText_score_plot(preText_results1)
+```
+
+
